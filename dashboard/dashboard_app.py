@@ -40,28 +40,28 @@ PALETTE = {
 @st.cache_resource(show_spinner="🔄 Loading data & training model (first run only) ...")
 def get_data_and_model():
 
-    X_train, X_test, y_train, y_test, features, scaler = load_data()
-    model, _ = train_and_save(X_train, X_test, y_train, y_test)
-    return X_train, X_test, y_train, y_test, features, scaler, model
+    x_train, x_test, y_train, y_test, features, scaler = load_data()
+    model, _ = train_and_save(x_train, x_test, y_train, y_test)
+    return x_train, x_test, y_train, y_test, features, scaler, model
 
 
 # ─── Cache: epsilon sweep is slow — compute once per (n_samples) value ───────
 @st.cache_data(show_spinner="📈 Computing ε sweep ...")
-def compute_eps_sweep(_art_clf, _model, X_sub, y_sub):
+def compute_eps_sweep(_art_clf, _model, x_sub, y_sub):
 
     eps_values    = [0.01, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40]
     sweep_adv_acc = []
 
     for e in eps_values:
-        Xa = fgsm_attack(_art_clf, X_sub, eps=e)
-        sweep_adv_acc.append(float(np.mean(_model.predict(Xa) == y_sub)))
+        xa = fgsm_attack(_art_clf, x_sub, eps=e)
+        sweep_adv_acc.append(float(np.mean(_model.predict(xa) == y_sub)))
 
     return eps_values, sweep_adv_acc
 
 
 # ─── Helper ───────────────────────────────────────────────────────────────────
-def accuracy(model, X, y):
-    return float(np.mean(model.predict(X) == y))
+def accuracy(model, x, y):
+    return float(np.mean(model.predict(x) == y))
 
 
 def make_bar_chart(labels, values, colors, title=""):
@@ -105,17 +105,17 @@ defense_type = st.sidebar.selectbox(
 n_samples = st.sidebar.slider("Samples to evaluate", 100, 1000, 500, step=100)
 
 # ─── Main header ──────────────────────────────────────────────────────────────
-st.title("🛡️ Adversarial ML Attack Toolkit")
+st.title(" Adversarial ML Attack Toolkit")
 st.caption("Attack a security classifier in real time — then defend it.")
 
 # ─── Load data + model ────────────────────────────────────────────────────────
-X_train, X_test, y_train, y_test, features, scaler, model = get_data_and_model()
+x_train, x_test, y_train, y_test, features, scaler, model = get_data_and_model()
 
-X_sub = X_test[:n_samples].astype(np.float32)
+x_sub = x_test[:n_samples].astype(np.float32)
 y_sub = y_test[:n_samples]
 
-art_clf = build_art_classifier(model, X_sub.shape[1])
-clean_acc = accuracy(model, X_sub, y_sub)
+art_clf = build_art_classifier(model, x_sub.shape[1])
+clean_acc = accuracy(model, x_sub, y_sub)
 
 # ─── Metric tiles ─────────────────────────────────────────────────────────────
 col1, col2, col3, col4 = st.columns(4)
@@ -124,15 +124,15 @@ col1.metric("Baseline accuracy", f"{clean_acc:.3f}", help="Before any attack")
 # ─── Run attack ───────────────────────────────────────────────────────────────
 with st.spinner(f"⚔️ Running {attack_type} attack ..."):
     if attack_type == "FGSM":
-        X_adv = fgsm_attack(art_clf, X_sub, eps=eps)
+        x_adv = fgsm_attack(art_clf, x_sub, eps=eps)
     elif attack_type == "PGD":
-        X_adv = pgd_attack(art_clf, X_sub, eps=eps, max_iter=pgd_iters)
+        x_adv = pgd_attack(art_clf, x_sub, eps=eps, max_iter=pgd_iters)
     else:
-        X_adv = feature_perturbation_attack(X_sub, noise_scale=fp_noise)
+        x_adv = feature_perturbation_attack(x_sub, noise_scale=fp_noise)
 
-adv_acc = accuracy(model, X_adv, y_sub)
+adv_acc = accuracy(model, x_adv, y_sub)
 drop    = clean_acc - adv_acc
-l2      = float(np.mean(np.linalg.norm(X_adv - X_sub, axis=1)))
+l2      = float(np.mean(np.linalg.norm(x_adv - x_sub, axis=1)))
 
 col2.metric("Under attack",       f"{adv_acc:.3f}", delta=f"{-drop:.3f}",    delta_color="inverse")
 col3.metric("Accuracy drop",      f"{drop:.3f}",    delta=f"{drop/clean_acc*100:.1f}%", delta_color="inverse")
@@ -143,21 +143,21 @@ st.markdown("---")
 # ─── Defense ──────────────────────────────────────────────────────────────────
 defended_acc   = None
 defended_model = model
-X_defended     = X_adv.copy()
+x_defended     = x_adv.copy()
 
 if defense_type == "Feature Squeezing":
-    X_defended   = feature_squeezing(X_adv)
-    defended_acc = accuracy(model, X_defended, y_sub)
+    x_defended   = feature_squeezing(x_adv)
+    defended_acc = accuracy(model, x_defended, y_sub)
 
 elif defense_type == "Gaussian Smoothing":
-    X_defended   = gaussian_smoothing(X_adv)
-    defended_acc = accuracy(model, X_defended, y_sub)
+    x_defended   = gaussian_smoothing(x_adv)
+    defended_acc = accuracy(model, x_defended, y_sub)
 
 elif defense_type == "Adversarial Training":
     with st.spinner("🔄 Adversarial training in progress (~20 seconds) ..."):
-        X_adv_tr       = fgsm_attack(art_clf, X_train, eps=eps)
-        defended_model = adversarial_training(model, X_train, y_train, X_adv_tr)
-    defended_acc = accuracy(defended_model, X_adv, y_sub)
+        x_adv_tr       = fgsm_attack(art_clf, x_train, eps=eps)
+        defended_model = adversarial_training(model, x_train, y_train, x_adv_tr)
+    defended_acc = accuracy(defended_model, x_adv, y_sub)
 
 # ─── Accuracy bar chart + Perturbation heatmap ───────────────────────────────
 col_left, col_right = st.columns(2)
@@ -177,7 +177,7 @@ with col_left:
 
 with col_right:
     st.subheader("🔥 Perturbation per feature (top 15)")
-    delta      = np.abs(X_adv[:50] - X_sub[:50])
+    delta      = np.abs(x_adv[:50] - x_sub[:50])
     mean_delta = delta.mean(axis=0)
     top_idx    = np.argsort(mean_delta)[::-1][:15]
 
@@ -200,13 +200,13 @@ st.markdown("---")
 # ─── Epsilon sweep ────────────────────────────────────────────────────────────
 st.subheader("📉 Attack strength vs accuracy (ε sweep)")
 
-# FIX: compute sweep inline but with a spinner so it doesn't look frozen
+# FIx: compute sweep inline but with a spinner so it doesn't look frozen
 eps_values = [0.01, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40]
 with st.spinner("Running ε sweep (FGSM only) ..."):
     sweep_adv_accs = []
     for e in eps_values:
-        Xa = fgsm_attack(art_clf, X_sub, eps=e)
-        sweep_adv_accs.append(accuracy(model, Xa, y_sub))
+        xa = fgsm_attack(art_clf, x_sub, eps=e)
+        sweep_adv_accs.append(accuracy(model, xa, y_sub))
 
 fig3 = go.Figure()
 fig3.add_trace(go.Scatter(
@@ -241,11 +241,11 @@ n_show = 10
 
 sample_df = pd.DataFrame({
     "True label":    ["Attack" if v else "Normal" for v in y_sub[:n_show]],
-    "Clean pred":    ["Attack" if v else "Normal" for v in model.predict(X_sub[:n_show])],
-    "Adv pred":      ["Attack" if v else "Normal" for v in model.predict(X_adv[:n_show])],
-    "Changed?":      ["⚠️ Yes" if a != b else "✅ No"
-                      for a, b in zip(model.predict(X_sub[:n_show]),
-                                      model.predict(X_adv[:n_show]))],
+    "Clean pred":    ["Attack" if v else "Normal" for v in model.predict(x_sub[:n_show])],
+    "Adv pred":      ["Attack" if v else "Normal" for v in model.predict(x_adv[:n_show])],
+    "Changed?":      ["⚠️ yes" if a != b else "✅ No"
+                      for a, b in zip(model.predict(x_sub[:n_show]),
+                                      model.predict(x_adv[:n_show]))],
 })
 
 

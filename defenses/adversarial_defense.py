@@ -12,29 +12,29 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 # ─── 1. Adversarial Training ─────────────────────────────────────────────────
 def adversarial_training(
     base_model,
-    X_train_clean: np.ndarray,
+    x_train_clean: np.ndarray,
     y_train: np.ndarray,
-    X_train_adv: np.ndarray,
+    x_train_adv: np.ndarray,
     augment_ratio: float = 0.5,
 ):
 
     from models.train_model import TorchMLP
 
-    n_adv  = int(len(X_train_adv) * augment_ratio)
-    idx    = np.random.choice(len(X_train_adv), n_adv, replace=False)
-    X_aug  = np.vstack([X_train_clean, X_train_adv[idx]])
+    n_adv  = int(len(x_train_adv) * augment_ratio)
+    idx    = np.random.choice(len(x_train_adv), n_adv, replace=False)
+    x_aug  = np.vstack([x_train_clean, x_train_adv[idx]])
     y_aug  = np.concatenate([y_train, y_train[idx]])
 
-    perm   = np.random.permutation(len(X_aug))
-    X_aug, y_aug = X_aug[perm], y_aug[perm]
+    perm   = np.random.permutation(len(x_aug))
+    x_aug, y_aug = x_aug[perm], y_aug[perm]
 
-    print(f"[Defense] Adversarial training: {len(X_aug)} samples "
-          f"({len(X_train_clean)} clean + {n_adv} adversarial)")
+    print(f"[Defense] Adversarial training: {len(x_aug)} samples "
+          f"({len(x_train_clean)} clean + {n_adv} adversarial)")
 
     if isinstance(base_model, TorchMLP):
         # Retrain a fresh PyTorch MLP from scratch
-        hardened = TorchMLP(input_dim=base_model.input_dim, epochs=10)
-        hardened.fit(X_aug, y_aug)
+        hardened = TorchMLP(input_dim=base_model.input_dim, epochs=30)
+        hardened.fit(x_aug, y_aug)
 
     elif isinstance(base_model, RandomForestClassifier):
         hardened = RandomForestClassifier(
@@ -42,48 +42,41 @@ def adversarial_training(
             max_depth=base_model.max_depth,
             random_state=42, n_jobs=-1, class_weight="balanced",
         )
-        hardened.fit(X_aug, y_aug)
+        hardened.fit(x_aug, y_aug)
 
     else:
-        # XGBoost or other
+        # xGBoost or other
         hardened = xgb.XGBClassifier(
             n_estimators=300, max_depth=8, learning_rate=0.05,
             eval_metric="logloss", random_state=42, n_jobs=-1,
         )
-        hardened.fit(X_aug, y_aug)
+        hardened.fit(x_aug, y_aug)
 
     print("[Defense] Hardened model trained.")
     return hardened
 
 
 # ─── 2. Feature Squeezing ────────────────────────────────────────────────────
-def feature_squeezing(X: np.ndarray, bit_depth: int = 4) -> np.ndarray:
-    """
-    Quantize feature values to 2^bit_depth levels.
-    Removes high-frequency adversarial noise — no retraining needed.
-    """
-    X_min = X.min(axis=0)
-    X_max = X.max(axis=0)
-    span  = X_max - X_min
+def feature_squeezing(x: np.ndarray, bit_depth: int = 4) -> np.ndarray:
+
+    x_min = x.min(axis=0)
+    x_max = x.max(axis=0)
+    span  = x_max - x_min
     span[span == 0] = 1.0
 
     levels = (2 ** bit_depth) - 1
-    return (np.round((X - X_min) / span * levels) / levels * span + X_min).astype(np.float32)
+    return (np.round((x - x_min) / span * levels) / levels * span + x_min).astype(np.float32)
 
 
 # ─── 3. Gaussian Smoothing ───────────────────────────────────────────────────
-def gaussian_smoothing(X: np.ndarray, sigma: float = 0.05) -> np.ndarray:
-    """
-    Average 5 noisy copies — blurs adversarial perturbations.
-    No retraining needed, works as a pre-processing step.
-    """
-    copies = [X + np.random.normal(0, sigma, X.shape) for _ in range(5)]
+def gaussian_smoothing(x: np.ndarray, sigma: float = 0.05) -> np.ndarray:
+
+    copies = [x + np.random.normal(0, sigma, x.shape) for _ in range(5)]
     return np.mean(copies, axis=0).astype(np.float32)
 
 
 # ─── 4. Ensemble Defense ─────────────────────────────────────────────────────
-def build_ensemble_defense(X_train: np.ndarray, y_train: np.ndarray):
-    """Train 3 diverse models, combine via soft voting."""
+def build_ensemble_defense(x_train: np.ndarray, y_train: np.ndarray):
     rf1  = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=1, n_jobs=-1)
     rf2  = RandomForestClassifier(n_estimators=150, max_depth=14, random_state=2, n_jobs=-1)
     xgb1 = xgb.XGBClassifier(
@@ -95,7 +88,7 @@ def build_ensemble_defense(X_train: np.ndarray, y_train: np.ndarray):
         voting="soft",
     )
     print("[Defense] Training ensemble ...")
-    ensemble.fit(X_train, y_train)
+    ensemble.fit(x_train, y_train)
     print("[Defense] Ensemble ready.")
     return ensemble
 
@@ -104,26 +97,29 @@ def build_ensemble_defense(X_train: np.ndarray, y_train: np.ndarray):
 def compare_defenses(
     original_model,
     hardened_model,
-    X_clean: np.ndarray,
-    X_adv: np.ndarray,
+    x_clean: np.ndarray,
+    x_adv: np.ndarray,
     y_true: np.ndarray,
-    squeezed_X_adv: np.ndarray = None,
+    squeezed_x_adv: np.ndarray = None,
+    smoothed_x_adv: np.ndarray = None,
+
 ) -> dict:
-    """Print accuracy comparison for all defense configurations."""
     results = {}
     configs = [
-        ("Original — clean input",  original_model, X_clean),
-        ("Original — adv input",    original_model, X_adv),
-        ("Hardened — adv input",    hardened_model, X_adv),
+        ("Original — clean input",  original_model, x_clean),
+        ("Original — adv input",    original_model, x_adv),
+        ("Hardened — adv input",    hardened_model, x_adv),
     ]
-    if squeezed_X_adv is not None:
-        configs.append(("Original + squeezing — adv", original_model, squeezed_X_adv))
+    if squeezed_x_adv is not None:
+        configs.append(("Original + squeezing — adv", original_model, squeezed_x_adv))
 
+    if smoothed_x_adv is not None:
+        configs.append(("Original + smoothing — adv", original_model, smoothed_x_adv))
     print(f"\n{'─'*62}")
     print(f"  {'Configuration':<40} {'Accuracy':>8}")
     print(f"{'─'*62}")
-    for label, model, X in configs:
-        acc = accuracy_score(y_true, model.predict(X))
+    for label, model, x in configs:
+        acc = accuracy_score(y_true, model.predict(x))
         results[label] = acc
         print(f"  {label:<40} {acc:>8.4f}")
     print(f"{'─'*62}")

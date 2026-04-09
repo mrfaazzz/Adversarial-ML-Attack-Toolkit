@@ -1,50 +1,3 @@
-"""
-data/data_loader.py
---------------------
-Loads and preprocesses the NSL-KDD network intrusion dataset.
-
-══════════════════════════════════════════════════════════════
-HOW TO USE WITH THE REAL DATASET (recommended)
-══════════════════════════════════════════════════════════════
-1. Go to:  https://www.unb.ca/cic/datasets/nsl.html
-2. Download:  KDDTrain+.txt  and  KDDTest+.txt
-3. Place them inside your project:
-       adversarial_ml_toolkit/
-       └── data/
-           ├── KDDTrain+.txt   ← put here
-           ├── KDDTest+.txt    ← put here (optional)
-           └── data_loader.py
-
-   The loader auto-detects them — no code changes needed.
-
-4. Alternatively pass the path manually:
-       load_data(train_path="C:/Users/you/Downloads/KDDTrain+.txt")
-
-══════════════════════════════════════════════════════════════
-FALLBACK — Realistic Synthetic NSL-KDD
-══════════════════════════════════════════════════════════════
-If no CSV is found, this module generates a statistically
-realistic dataset that matches the real NSL-KDD distributions
-across all 41 features and 4 major attack categories:
-  - DoS   (Denial of Service)
-  - Probe (Port/network scanning)
-  - R2L   (Remote-to-Local)
-  - U2R   (User-to-Root privilege escalation)
-
-The feature distributions are derived from published statistics
-in: Tavallaee et al. (2009) "A Detailed Analysis of the KDD CUP
-99 Data Set", IEEE CISDA.
-
-══════════════════════════════════════════════════════════════
-POSSIBLE ERRORS
-══════════════════════════════════════════════════════════════
-  ValueError: Input contains NaN  →  CSV has missing values,
-      the loader calls dropna() automatically.
-  MemoryError                     →  Pass n_samples=3000 to
-      generate_realistic_nslkdd() for a smaller dataset.
-  Wrong column count              →  Your CSV might have a
-      header row. Pass header=0 to pd.read_csv inside load_data.
-"""
 
 import os
 import numpy as np
@@ -100,19 +53,7 @@ U2R_LABELS    = {"buffer_overflow", "loadmodule", "perl", "rootkit",
 # Distributions derived from Tavallaee et al. (2009) + KDD CUP 99 statistics
 # ═════════════════════════════════════════════════════════════════════════════
 def generate_realistic_nslkdd(n_samples: int = 10000, random_state: int = 42) -> pd.DataFrame:
-    """
-    Generate a statistically realistic NSL-KDD dataset.
 
-    Attack category distribution (matches real NSL-KDD proportions):
-      Normal  ~45%  — legitimate traffic
-      DoS     ~35%  — Denial of Service (neptune, smurf, etc.)
-      Probe    ~8%  — Port scanning (ipsweep, nmap, etc.)
-      R2L      ~7%  — Remote-to-local exploits
-      U2R      ~5%  — Privilege escalation
-
-    All 41 features use distributions that match published statistics
-    from the original KDD CUP 99 dataset.
-    """
     rng = np.random.default_rng(random_state)
 
     # Sample counts per class
@@ -393,28 +334,6 @@ def load_data(
     test_path: str = None,
     n_samples: int = 10000,
 ):
-    """
-    Load NSL-KDD dataset and return train/test arrays ready for ML.
-
-    Auto-detection order:
-      1. train_path  argument (explicit path)
-      2. data/KDDTrain+.txt  (file in same folder as this script)
-      3. Realistic synthetic fallback  (always works)
-
-    Parameters
-    ----------
-    train_path : str  optional — path to KDDTrain+.txt
-    test_path  : str  optional — path to KDDTest+.txt (if provided,
-                      used as test set instead of a random split)
-    n_samples  : int  — number of rows to generate if using fallback
-
-    Returns
-    -------
-    X_train, X_test  : np.ndarray  float32, StandardScaler applied
-    y_train, y_test  : np.ndarray  int  (0=normal, 1=attack)
-    feature_names    : list[str]   41 feature names
-    scaler           : fitted StandardScaler
-    """
 
     # ── Auto-detect dataset location ─────────────────────────────────────────
     data_dir     = os.path.dirname(os.path.abspath(__file__))

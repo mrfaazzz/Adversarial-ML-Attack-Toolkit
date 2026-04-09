@@ -13,11 +13,9 @@ SAVE_DIR = os.path.join(os.path.dirname(__file__), "saved")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # PyTorch MLP architecture
 # ─────────────────────────────────────────────────────────────────────────────
 class MLP(nn.Module):
-    """3-layer MLP for binary classification. Input: tabular features."""
     def __init__(self, input_dim: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -34,7 +32,7 @@ class MLP(nn.Module):
         return self.net(x)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # sklearn-compatible wrapper around PyTorch MLP
 # ─────────────────────────────────────────────────────────────────────────────
 class TorchMLP:
@@ -49,12 +47,12 @@ class TorchMLP:
         self.model      = MLP(input_dim).to(self.device)
         self.classes_   = np.array([0, 1])   # required by sklearn convention
 
-    def fit(self, X, y):
-        X_t = torch.tensor(X, dtype=torch.float32)
+    def fit(self, x, y):
+        x_t = torch.tensor(x, dtype=torch.float32)
         y_t = torch.tensor(y, dtype=torch.long)
 
         loader = DataLoader(
-            TensorDataset(X_t, y_t),
+            TensorDataset(x_t, y_t),
             batch_size=self.batch_size,
             shuffle=True
         )
@@ -81,44 +79,42 @@ class TorchMLP:
             print(f"Epoch {epoch + 1}/{self.epochs} | Loss: {total_loss:.4f}")
 
         return self
-    def predict_proba(self, X):
+    def predict_proba(self, x):
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(torch.tensor(X, dtype=torch.float32))
+            logits = self.model(torch.tensor(x, dtype=torch.float32))
             return torch.softmax(logits, dim=1).numpy()
 
-    def predict(self, X):
-        return np.argmax(self.predict_proba(X), axis=1)
+    def predict(self, x):
+        return np.argmax(self.predict_proba(x), axis=1)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Random Forest  (comparison model)
 # ─────────────────────────────────────────────────────────────────────────────
-def train_random_forest(X_train, y_train):
+def train_random_forest(x_train, y_train):
     return RandomForestClassifier(
         n_estimators=200, max_depth=12, random_state=42,
         n_jobs=-1, class_weight="balanced"
-    ).fit(X_train, y_train)
+    ).fit(x_train, y_train)
 
 
+# xGBoost  (comparison model)
 # ─────────────────────────────────────────────────────────────────────────────
-# XGBoost  (comparison model)
-# ─────────────────────────────────────────────────────────────────────────────
-def train_xgboost(X_train, y_train):
-    scale_pos = float((y_train == 0).sum()) / float((y_train == 1).sum())
+def train_xgboost(x_train, y_train):
+    scale_pos = float(np.sum(y_train == 0)) / float(np.sum(y_train == 1))
     return xgb.XGBClassifier(
         n_estimators=300, max_depth=8, learning_rate=0.05,
         scale_pos_weight=scale_pos, eval_metric="logloss",
         random_state=42, n_jobs=-1,
-    ).fit(X_train, y_train, verbose=False)
+    ).fit(x_train, y_train, verbose=False)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # Evaluation helper
 # ─────────────────────────────────────────────────────────────────────────────
-def evaluate_model(model, X_test, y_test, name="Model"):
-    y_pred  = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:, 1]
+def evaluate_model(model, x_test, y_test, name="Model"):
+    y_pred  = model.predict(x_test)
+    y_proba = model.predict_proba(x_test)[:, 1]
     acc = accuracy_score(y_test, y_pred)
     auc = roc_auc_score(y_test, y_proba)
 
@@ -131,7 +127,7 @@ def evaluate_model(model, X_test, y_test, name="Model"):
     return {"accuracy": acc, "roc_auc": auc}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # Save / Load
 # ─────────────────────────────────────────────────────────────────────────────
 def save_model(model, name):
@@ -151,38 +147,39 @@ def load_model(name="baseline_model"):
     return joblib.load(path)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Main train function
 # ─────────────────────────────────────────────────────────────────────────────
-def train_and_save(X_train, X_test, y_train, y_test):
-    """
-    Train all three models.  Returns (mlp, metrics_dict).
-    The MLP is always used as baseline because it supports gradient attacks.
-    """
-    input_dim = X_train.shape[1]
+def train_and_save(x_train, x_test, y_train, y_test):
+
+    input_dim = x_train.shape[1]
 
     print("\n[ModelTrainer] Training PyTorch MLP (baseline for attacks) ...")
     mlp = TorchMLP(input_dim=input_dim, epochs=10)
-    mlp.fit(X_train, y_train)
-    mlp_metrics = evaluate_model(mlp, X_test, y_test, "PyTorch MLP (Baseline)")
+    mlp.fit(x_train, y_train)
+    mlp_metrics = evaluate_model(mlp, x_test, y_test, "PyTorch MLP (Baseline)")
 
     print("\n[ModelTrainer] Training Random Forest (comparison) ...")
-    rf         = train_random_forest(X_train, y_train)
-    rf_metrics = evaluate_model(rf, X_test, y_test, "Random Forest")
+    rf         = train_random_forest(x_train, y_train)
+    rf_metrics = evaluate_model(rf, x_test, y_test, "Random Forest")
 
-    print("\n[ModelTrainer] Training XGBoost (comparison) ...")
-    xgb_model   = train_xgboost(X_train, y_train)
-    xgb_metrics = evaluate_model(xgb_model, X_test, y_test, "XGBoost")
+    print("\n[ModelTrainer] Training xGBoost (comparison) ...")
+    xgb_model   = train_xgboost(x_train, y_train)
+    xgb_metrics = evaluate_model(xgb_model, x_test, y_test, "xGBoost")
 
     print("\n[ModelTrainer] Baseline model: PyTorch MLP (used for gradient attacks)")
     save_model(mlp,       "baseline_model")
     save_model(rf,        "random_forest")
     save_model(xgb_model, "xgboost")
 
-    return mlp, {
-        "pytorch_mlp":   mlp_metrics,
-        "random_forest": rf_metrics,
-        "xgboost":       xgb_metrics,
+    return {
+        "mlp":mlp,
+        "rf":rf,
+        "xgb":xgb_model,
+        "metrics":{
+           "pytorch_mlp":   mlp_metrics,
+           "random_forest": rf_metrics,
+           "xgboost":       xgb_metrics,
+        }
     }
 
 
@@ -190,5 +187,5 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from data.data_loader import load_data
-    X_train, X_test, y_train, y_test, _, _ = load_data()
-    train_and_save(X_train, X_test, y_train, y_test)
+    x_train, x_test, y_train, y_test, _, _ = load_data()
+    train_and_save(x_train, x_test, y_train, y_test)
