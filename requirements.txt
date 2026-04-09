@@ -1,0 +1,24 @@
+# Core ML
+scikit-learn>=1.0
+xgboost>=1.5
+numpy>=1.21
+pandas>=1.3
+joblib>=1.1
+
+# PyTorch (CPU) — needed for gradient-based attacks
+torch>=1.13
+torchvision>=0.14
+
+# Adversarial attacks — IBM ART
+adversarial-robustness-toolbox>=1.15
+
+# Plotting
+matplotlib>=3.5
+seaborn>=0.12
+plotly>=5.0
+
+# Dashboard
+streamlit>=1.20
+
+# Utilities
+scipy>=1.7
