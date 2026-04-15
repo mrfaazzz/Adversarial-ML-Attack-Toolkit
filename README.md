@@ -139,14 +139,3 @@ After running `main.py`, find these in `results/`:
 - **Dataset** — NSL-KDD (or synthetic fallback)
 
 ---
-
-## Presentation Script (Demo Day)
-
-1. Open the Streamlit dashboard
-2. Show baseline accuracy (~90%+) — model works well
-3. Set attack = FGSM, ε = 0.15 → accuracy drops dramatically
-4. Show the perturbation heatmap — explain *which features* were tweaked
-5. Enable Adversarial Training defense → accuracy recovers
-6. Drag ε slider up to 0.4 → show how defense holds vs strong attacks
-7. Switch to PGD → show it's stronger than FGSM
-8. Conclude: "We broke the model, understood why, then fixed it"
