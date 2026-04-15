@@ -1,15 +1,3 @@
-"""
-attacks/adversarial_attacks.py
---------------------------------
-Three adversarial attacks against the IDS classifier:
-
-  1. FGSM  — Fast Gradient Sign Method (white-box, single step)
-  2. PGD   — Projected Gradient Descent (white-box, iterative, stronger)
-  3. Feature Perturbation — black-box, no gradients needed
-
-All attacks use IBM's Adversarial Robustness Toolbox (ART).
-"""
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,10 +7,7 @@ from art.attacks.evasion import FastGradientMethod, ProjectedGradientDescent
 
 # ── Build the ART wrapper around the PyTorch MLP ─────────────────────────────
 def build_art_classifier(torch_mlp, clip_values=None):
-    """
-    Wrap a TorchMLP inside ART's PyTorchClassifier so it can accept
-    gradient-based attack calls.
-    """
+
     if clip_values is None:
         clip_values = (-10.0, 10.0)
 

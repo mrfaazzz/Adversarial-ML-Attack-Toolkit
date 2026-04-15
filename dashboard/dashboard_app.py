@@ -1,11 +1,3 @@
-"""
-dashboard/dashboard_app.py
-----------------------------
-Streamlit dashboard for the Adversarial ML Attack Toolkit.
-
-Run:  streamlit run dashboard/dashboard_app.py
-"""
-
 import os
 import sys
 import numpy as np
@@ -115,7 +107,13 @@ x_train, x_test, y_train, y_test, features, scaler, model = get_data_and_model()
 x_sub = x_test[:n_samples].astype(np.float32)
 y_sub = y_test[:n_samples]
 
-art_clf   = build_art_classifier(model, x_sub.shape[1])
+# art_clf   = build_art_classifier(model)
+
+art_clf = build_art_classifier(
+    model,
+    clip_values=(x_sub.min(), x_sub.max())
+)
+
 clean_acc = accuracy(model, x_sub, y_sub)
 
 # ── Metric tiles ──────────────────────────────────────────────────────────────

@@ -253,7 +253,7 @@ def stage_defences(ctx: dict) -> dict:
     fgsm_metrics = ctx["fgsm_metrics"]
     pgd_metrics  = ctx["pgd_metrics"]
 
-    _section("Step 6a — Adversarial Training")
+    _section("Adversarial Training")
     # Use a subset for speed
     subset      = min(30000, len(X_train))
     X_train_sub = X_train[:subset]
@@ -265,12 +265,12 @@ def stage_defences(ctx: dict) -> dict:
     )
     save_hardened_model(hardened_model)
 
-    _section("Step 6b — Feature Squeezing & Gaussian Smoothing")
+    _section("Feature Squeezing & Gaussian Smoothing")
     X_squeezed = feature_squeezing(X_fgsm, bit_depth=4)
     X_smoothed = gaussian_smoothing(X_fgsm, sigma=0.05)
     print("  Squeezed and smoothed adversarial samples ready.")
 
-    _section("Step 6c — Comparing all defences")
+    _section("Comparing all defences")
     defense_results = compare_defenses(
         best_model, hardened_model,
         X_test_sub, X_fgsm, y_test_sub,
@@ -279,7 +279,7 @@ def stage_defences(ctx: dict) -> dict:
     )
     all_metrics["Defense Comparison"] = defense_results
 
-    _section("Step 6d — Generating accuracy comparison plot")
+    _section("Generating accuracy comparison plot")
     acc_data = {
         "Baseline (clean)":        fgsm_metrics["clean_accuracy"],
         "Under FGSM attack":       fgsm_metrics["adversarial_accuracy"],
@@ -289,7 +289,7 @@ def stage_defences(ctx: dict) -> dict:
     }
     plot_accuracy_comparison(acc_data)
 
-    _section("Step 7 — Saving report")
+    _section("Saving report")
     _save_report(all_metrics)
 
     _banner("STAGE 3 COMPLETE  —  PIPELINE DONE")
