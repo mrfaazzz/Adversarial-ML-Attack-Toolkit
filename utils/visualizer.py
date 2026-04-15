@@ -1,65 +1,44 @@
 """
 utils/visualizer.py
 --------------------
-Plotting and reporting utilities for the Adversarial ML Toolkit.
-Saves all figures to results/ directory as PNG files.
-
-POSSIBLE ERRORS:
-    - results/ folder missing         →  created automatically
-    - model has no feature_importances_  →  only RF/XGBoost have this;
-                                            if another model is passed,
-                                            the feature importance plot is skipped
-    - Plots not showing on screen     →  they are saved to results/ as PNG files,
-                                         not displayed. Open them from the folder.
-    - seaborn import error            →  pip install seaborn
+Generates and saves all charts to the results/ folder.
+Charts are saved as PNG files — open them from the results/ folder after running.
 """
 
 import os
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend — works in any environment
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix, roc_curve, auc
+from sklearn.metrics import confusion_matrix
 
-# ── Results folder (created automatically) ────────────────────────────────────
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-# ── Colour palette ────────────────────────────────────────────────────────────
+# Colour scheme
 PALETTE = {
-    "clean":    "#1D9E75",   # green  — baseline / clean
-    "attacked": "#D85A30",   # red    — under attack
-    "hardened": "#378ADD",   # blue   — after defense
-    "squeezed": "#7F77DD",   # purple — feature squeezing
+    "clean":    "#1D9E75",   # green
+    "attacked": "#D85A30",   # red
+    "hardened": "#378ADD",   # blue
+    "squeezed": "#7F77DD",   # purple
 }
 
 
 def _save(fig, name: str) -> str:
-    """Save figure to results/ and close it."""
     path = os.path.join(RESULTS_DIR, name)
     fig.savefig(path, dpi=150, bbox_inches="tight")
-    print(f"[Viz] Saved → {path}")
+    print(f"[Plot] Saved → {path}")
     plt.close(fig)
     return path
 
 
-# ─── 1. Accuracy comparison bar chart ────────────────────────────────────────
-def plot_accuracy_comparison(
-    results: dict,
-    title: str = "Accuracy: clean vs adversarial vs hardened",
-) -> str:
-    """
-    Horizontal bar chart comparing accuracy across conditions.
-
-    Parameters
-    ----------
-    results : dict  {label: accuracy_float}
-              e.g. {"Baseline (clean)": 0.95, "Under FGSM": 0.61}
-    """
+# ── 1. Accuracy comparison bar chart ─────────────────────────────────────────
+def plot_accuracy_comparison(results: dict, title: str = "Accuracy: clean vs adversarial vs hardened") -> str:
     fig, ax = plt.subplots(figsize=(9, 4))
     labels = list(results.keys())
     values = [results[k] for k in labels]
 
-    # Auto-colour bars based on label content
     colors = []
     for lbl in labels:
         l = lbl.lower()
@@ -82,18 +61,10 @@ def plot_accuracy_comparison(
     return _save(fig, "accuracy_comparison.png")
 
 
-# ─── 2. Perturbation heatmap ─────────────────────────────────────────────────
-def plot_perturbation_heatmap(
-    X_clean: np.ndarray,
-    X_adv: np.ndarray,
-    feature_names: list,
-    n_samples: int = 50,
-    attack_name: str = "FGSM",
-) -> str:
-    """
-    Heatmap showing how much each feature was perturbed per sample.
-    Shows only the top 20 most-perturbed features.
-    """
+# ── 2. Perturbation heatmap ───────────────────────────────────────────────────
+def plot_perturbation_heatmap(X_clean: np.ndarray, X_adv: np.ndarray,
+                               feature_names: list, n_samples: int = 50,
+                               attack_name: str = "FGSM") -> str:
     delta     = np.abs(X_adv[:n_samples] - X_clean[:n_samples])
     top_idx   = np.argsort(delta.mean(axis=0))[::-1][:20]
     delta_top = delta[:, top_idx]
@@ -110,22 +81,13 @@ def plot_perturbation_heatmap(
     return _save(fig, f"perturbation_heatmap_{attack_name.lower()}.png")
 
 
-# ─── 3. Confusion matrices (before vs after attack) ──────────────────────────
-def plot_confusion_matrices(
-    model_clean_pred: np.ndarray,
-    model_adv_pred: np.ndarray,
-    y_true: np.ndarray,
-) -> str:
-    """
-    Side-by-side confusion matrices: clean input vs adversarial input.
-    Shows how many Normal/Attack samples get mis-classified under attack.
-    """
+# ── 3. Confusion matrices ─────────────────────────────────────────────────────
+def plot_confusion_matrices(pred_clean: np.ndarray, pred_adv: np.ndarray,
+                             y_true: np.ndarray) -> str:
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    for ax, preds, title in zip(
-        axes,
-        [model_clean_pred, model_adv_pred],
-        ["Clean input", "Adversarial input"],
-    ):
+    for ax, preds, title in zip(axes,
+                                 [pred_clean, pred_adv],
+                                 ["Clean input", "Adversarial input"]):
         cm = confusion_matrix(y_true, preds)
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax,
                     xticklabels=["Normal", "Attack"],
@@ -137,56 +99,14 @@ def plot_confusion_matrices(
     return _save(fig, "confusion_matrices.png")
 
 
-# ─── 4. ROC curves ───────────────────────────────────────────────────────────
-def plot_roc_curves(
-    model,
-    X_clean: np.ndarray,
-    X_adv: np.ndarray,
-    X_hardened_adv: np.ndarray,
-    y_true: np.ndarray,
-) -> str:
-    """
-    Overlaid ROC curves for clean, adversarial, and hardened conditions.
-    AUC shown in legend — higher = better.
-    """
-    fig, ax = plt.subplots(figsize=(7, 5))
-    configs = [
-        ("Clean input",    X_clean,        PALETTE["clean"]),
-        ("Adv input",      X_adv,          PALETTE["attacked"]),
-        ("Hardened + adv", X_hardened_adv, PALETTE["hardened"]),
-    ]
-    for label, X, color in configs:
-        proba     = model.predict_proba(X)[:, 1]
-        fpr, tpr, _ = roc_curve(y_true, proba)
-        roc_auc   = auc(fpr, tpr)
-        ax.plot(fpr, tpr, label=f"{label} (AUC={roc_auc:.3f})",
-                color=color, linewidth=2)
-
-    ax.plot([0, 1], [0, 1], "k--", linewidth=0.8)
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curves — clean vs adversarial vs hardened", fontsize=12)
-    ax.legend(fontsize=9)
-    fig.tight_layout()
-    return _save(fig, "roc_curves.png")
-
-
-# ─── 5. Epsilon sweep (attack strength vs accuracy) ──────────────────────────
-def plot_eps_sweep(
-    eps_values: list,
-    clean_accs: list,
-    adv_accs: list,
-    attack_name: str = "FGSM",
-) -> str:
-    """
-    Line chart showing how accuracy drops as ε (perturbation budget) increases.
-    The shaded area between the two lines shows the 'damage zone'.
-    """
+# ── 4. Epsilon sweep ──────────────────────────────────────────────────────────
+def plot_eps_sweep(eps_values: list, clean_accs: list, adv_accs: list,
+                   attack_name: str = "FGSM") -> str:
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(eps_values, clean_accs, "o-",
-            color=PALETTE["clean"],    label="Clean accuracy",      linewidth=2)
-    ax.plot(eps_values, adv_accs, "s--",
-            color=PALETTE["attacked"], label="Adversarial accuracy", linewidth=2)
+    ax.plot(eps_values, clean_accs, "o-", color=PALETTE["clean"],
+            label="Clean accuracy", linewidth=2)
+    ax.plot(eps_values, adv_accs, "s--", color=PALETTE["attacked"],
+            label="Adversarial accuracy", linewidth=2)
     ax.fill_between(eps_values, adv_accs, clean_accs,
                     alpha=0.12, color=PALETTE["attacked"])
     ax.set_xlabel("Perturbation ε")
@@ -198,20 +118,10 @@ def plot_eps_sweep(
     return _save(fig, f"eps_sweep_{attack_name.lower()}.png")
 
 
-# ─── 6. Feature importance ───────────────────────────────────────────────────
-def plot_feature_importance(
-    model,
-    feature_names: list,
-    top_n: int = 15,
-) -> str | None:
-    """
-    Bar chart of the top N most important features.
-
-    Only works for tree-based models (Random Forest, XGBoost).
-    Silently skipped for other model types.
-    """
+# ── 5. Feature importance ─────────────────────────────────────────────────────
+def plot_feature_importance(model, feature_names: list, top_n: int = 15) -> str:
     if not hasattr(model, "feature_importances_"):
-        print("[Viz] Skipping feature importance — model has no feature_importances_")
+        print("[Plot] Skipping feature importance — not a tree-based model.")
         return None
 
     importances = model.feature_importances_

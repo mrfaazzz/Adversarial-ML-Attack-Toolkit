@@ -1,3 +1,15 @@
+"""
+attacks/adversarial_attacks.py
+--------------------------------
+Three adversarial attacks against the IDS classifier:
+
+  1. FGSM  — Fast Gradient Sign Method (white-box, single step)
+  2. PGD   — Projected Gradient Descent (white-box, iterative, stronger)
+  3. Feature Perturbation — black-box, no gradients needed
+
+All attacks use IBM's Adversarial Robustness Toolbox (ART).
+"""
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -5,53 +17,46 @@ from art.estimators.classification import PyTorchClassifier
 from art.attacks.evasion import FastGradientMethod, ProjectedGradientDescent
 
 
-
-# ART Wrapper  —  PyTorch version (supports gradients)
-# ─────────────────────────────────────────────────────────────────────────────
-def build_art_classifier(torch_mlp_wrapper, input_dim: int = None, clip_values=None ):
-
-    pt_model  = torch_mlp_wrapper.model
-    in_dim = input_dim if input_dim is not None else torch_mlp_wrapper.input_dim
-
-    if in_dim is None:
-        raise ValueError("input_dim could not be determined")
-
+# ── Build the ART wrapper around the PyTorch MLP ─────────────────────────────
+def build_art_classifier(torch_mlp, clip_values=None):
+    """
+    Wrap a TorchMLP inside ART's PyTorchClassifier so it can accept
+    gradient-based attack calls.
+    """
     if clip_values is None:
         clip_values = (-10.0, 10.0)
+
+    pt_model  = torch_mlp.model
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(pt_model.parameters(), lr=1e-3)
 
-    art_clf = PyTorchClassifier(
+    return PyTorchClassifier(
         model=pt_model,
         loss=criterion,
         optimizer=optimizer,
-        input_shape=(in_dim,),
+        input_shape=(torch_mlp.input_dim,),
         nb_classes=2,
         clip_values=clip_values,
     )
-    return art_clf
 
 
-
-# FGSM Attack
-# ─────────────────────────────────────────────────────────────────────────────
-def fgsm_attack(art_clf, x_test: np.ndarray, eps: float = 0.1) -> np.ndarray:
-
+# ── Attack 1: FGSM ────────────────────────────────────────────────────────────
+def fgsm_attack(art_clf, X_test: np.ndarray, eps: float = 0.15) -> np.ndarray:
+    """
+    Fast Gradient Sign Method — single-step, white-box attack.
+    eps controls how large the perturbation is.
+    """
     attack = FastGradientMethod(estimator=art_clf, eps=eps, targeted=False)
-    return attack.generate(x=x_test.astype(np.float32))
+    return attack.generate(x=X_test.astype(np.float32))
 
 
-
-# PGD Attack
-# ─────────────────────────────────────────────────────────────────────────────
-def pgd_attack(
-    art_clf,
-    x_test: np.ndarray,
-    eps: float = 0.1,
-    eps_step: float = None,
-    max_iter: int = 40,
-) -> np.ndarray:
-
+# ── Attack 2: PGD ─────────────────────────────────────────────────────────────
+def pgd_attack(art_clf, X_test: np.ndarray, eps: float = 0.15,
+               eps_step: float = None, max_iter: int = 20) -> np.ndarray:
+    """
+    Projected Gradient Descent — iterative white-box attack.
+    Much stronger than FGSM but slower. max_iter controls number of steps.
+    """
     if eps_step is None:
         eps_step = eps / 3
 
@@ -63,47 +68,40 @@ def pgd_attack(
         targeted=False,
         verbose=False,
     )
-    return attack.generate(x=x_test.astype(np.float32))
+    return attack.generate(x=X_test.astype(np.float32))
 
 
-
-# Feature Perturbation (Black-box)
-# ─────────────────────────────────────────────────────────────────────────────
-def feature_perturbation_attack(
-    x_test: np.ndarray,
-    noise_scale: float = 0.3,
-    top_n_features: int = 10,
-    random_state: int = 42,
-) -> np.ndarray:
-
+# ── Attack 3: Feature Perturbation ───────────────────────────────────────────
+def feature_perturbation_attack(X_test: np.ndarray, noise_scale: float = 0.4,
+                                 top_n_features: int = 10, random_state: int = 42) -> np.ndarray:
+    """
+    Black-box attack — no gradients or model access needed.
+    Adds Gaussian noise to the top-N most variable features.
+    """
     rng   = np.random.default_rng(random_state)
-    x_adv = x_test.copy().astype(np.float32)
+    X_adv = X_test.copy().astype(np.float32)
 
-    # cols = list(range(min(top_n_features, x_test.shape[1])))
-    variances = x_test.var(axis=0)
+    # Target the features with highest variance (most informative to perturb)
+    variances = X_test.var(axis=0)
     cols = np.argsort(variances)[::-1][:top_n_features]
     for col in cols:
-        x_adv[:, col] += rng.normal(0, noise_scale, size=x_adv.shape[0])
-    return x_adv
+        X_adv[:, col] += rng.normal(0, noise_scale, size=X_adv.shape[0])
+    return X_adv
 
 
-
-# Evaluation helper
-# ─────────────────────────────────────────────────────────────────────────────
-def evaluate_attack(
-    model,
-    x_clean: np.ndarray,
-    x_adv: np.ndarray,
-    y_true: np.ndarray,
-    attack_name: str = "Attack",
-) -> dict:
-
+# ── Evaluation helper ─────────────────────────────────────────────────────────
+def evaluate_attack(model, X_clean: np.ndarray, X_adv: np.ndarray,
+                    y_true: np.ndarray, attack_name: str = "Attack") -> dict:
+    """
+    Compare model accuracy on clean vs adversarial inputs.
+    Returns a dict with accuracy, drop, and perturbation norms.
+    """
     from sklearn.metrics import accuracy_score
 
-    pred_clean = model.predict(x_clean)
-    pred_adv   = model.predict(x_adv)
+    pred_clean = model.predict(X_clean)
+    pred_adv   = model.predict(X_adv)
 
-    # ART classifiers return probability arrays → convert to labels
+    # Handle probability arrays (from ART classifiers)
     if pred_clean.ndim > 1:
         pred_clean = np.argmax(pred_clean, axis=1)
         pred_adv   = np.argmax(pred_adv,   axis=1)
@@ -111,15 +109,15 @@ def evaluate_attack(
     clean_acc = accuracy_score(y_true, pred_clean)
     adv_acc   = accuracy_score(y_true, pred_adv)
     drop      = clean_acc - adv_acc
-    l2_norm   = float(np.mean(np.linalg.norm(x_adv - x_clean, axis=1)))
-    linf_norm = float(np.mean(np.max(np.abs(x_adv - x_clean), axis=1)))
+    l2_norm   = float(np.mean(np.linalg.norm(X_adv - X_clean, axis=1)))
+    linf_norm = float(np.mean(np.max(np.abs(X_adv - X_clean), axis=1)))
 
-    print(f"\n[{attack_name}]")
-    print(f"  Clean accuracy     : {clean_acc:.4f}")
-    print(f"  Adversarial acc    : {adv_acc:.4f}")
-    print(f"  Accuracy drop      : {drop:.4f}  ({drop/clean_acc*100:.1f}%)")
-    print(f"  Mean L2  norm      : {l2_norm:.4f}")
-    print(f"  Mean L∞  norm      : {linf_norm:.4f}")
+    print(f"\n  [{attack_name}]")
+    print(f"  Clean accuracy  : {clean_acc:.4f}")
+    print(f"  Adv accuracy    : {adv_acc:.4f}")
+    print(f"  Accuracy drop   : {drop:.4f}  ({drop/clean_acc*100:.1f}%)")
+    print(f"  Mean L2 norm    : {l2_norm:.4f}")
+    print(f"  Mean L∞ norm    : {linf_norm:.4f}")
 
     return {
         "attack":               attack_name,
@@ -130,24 +128,3 @@ def evaluate_attack(
         "l2_norm":              l2_norm,
         "linf_norm":            linf_norm,
     }
-
-
-# ── Run standalone ─────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from data.data_loader import load_data
-    from models.train_model import load_model
-
-    x_train, x_test, y_train, y_test, _, _ = load_data()
-    mlp     = load_model("baseline_model")
-    art_clf = build_art_classifier(
-    clip_values=(float(x_train.min()), float(x_train.max())))
-
-    print("\n=== FGSM ===")
-    x_fgsm = fgsm_attack(art_clf, x_test[:300], eps=0.15)
-    evaluate_attack(mlp, x_test[:300], x_fgsm, y_test[:300], "FGSM")
-
-    print("\n=== Feature Perturbation ===")
-    x_fp = feature_perturbation_attack(x_test[:300], noise_scale=0.4)
-    evaluate_attack(mlp, x_test[:300], x_fp, y_test[:300], "Feature Perturbation")

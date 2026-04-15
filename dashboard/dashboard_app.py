@@ -1,3 +1,11 @@
+"""
+dashboard/dashboard_app.py
+----------------------------
+Streamlit dashboard for the Adversarial ML Attack Toolkit.
+
+Run:  streamlit run dashboard/dashboard_app.py
+"""
+
 import os
 import sys
 import numpy as np
@@ -7,10 +15,11 @@ import plotly.express as px
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from attacks.adversarial_attacks import build_art_classifier
+
 from data.data_loader import load_data
-from models.train_model import train_and_save
+from models.train_model import train_and_save, load_model
 from attacks.adversarial_attacks import (
+    build_art_classifier,
     fgsm_attack,
     pgd_attack,
     feature_perturbation_attack,
@@ -21,7 +30,7 @@ from defenses.adversarial_defense import (
     gaussian_smoothing,
 )
 
-# ─── Page config ─────────────────────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Adversarial ML Attack Toolkit",
     page_icon="🛡️",
@@ -36,30 +45,22 @@ PALETTE = {
 }
 
 
-# ─── Cache: data + model loaded ONCE, reused every interaction ────────────────
-@st.cache_resource(show_spinner="🔄 Loading data & training model (first run only) ...")
+# ── Cache: data + model loaded ONCE ──────────────────────────────────────────
+@st.cache_resource(show_spinner="🔄 Loading data & models (first run only) ...")
 def get_data_and_model():
-
     x_train, x_test, y_train, y_test, features, scaler = load_data()
-    model, _ = train_and_save(x_train, x_test, y_train, y_test)
+
+    # Try to load a saved MLP first; train only if not found
+    try:
+        model = load_model("baseline_model")
+    except FileNotFoundError:
+        result = train_and_save(x_train, x_test, y_train, y_test)
+        model  = result["mlp"]
+
     return x_train, x_test, y_train, y_test, features, scaler, model
 
 
-# ─── Cache: epsilon sweep is slow — compute once per (n_samples) value ───────
-@st.cache_data(show_spinner="📈 Computing ε sweep ...")
-def compute_eps_sweep(_art_clf, _model, x_sub, y_sub):
-
-    eps_values    = [0.01, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40]
-    sweep_adv_acc = []
-
-    for e in eps_values:
-        xa = fgsm_attack(_art_clf, x_sub, eps=e)
-        sweep_adv_acc.append(float(np.mean(_model.predict(xa) == y_sub)))
-
-    return eps_values, sweep_adv_acc
-
-
-# ─── Helper ───────────────────────────────────────────────────────────────────
+# ── Helper ────────────────────────────────────────────────────────────────────
 def accuracy(model, x, y):
     return float(np.mean(model.predict(x) == y))
 
@@ -82,46 +83,46 @@ def make_bar_chart(labels, values, colors, title=""):
     return fig
 
 
-# ─── Sidebar controls ─────────────────────────────────────────────────────────
+# ── Sidebar controls ──────────────────────────────────────────────────────────
 st.sidebar.title("⚙️ Settings")
 
 attack_type = st.sidebar.selectbox(
     "Attack type",
     ["FGSM", "PGD", "Feature Perturbation"],
-    help="FGSM = fast; PGD = stronger but slower; Feature Perturbation = black-box"
+    help="FGSM = fast; PGD = stronger but slower; Feature Perturbation = black-box",
 )
 
 eps       = st.sidebar.slider("Perturbation ε (FGSM / PGD)", 0.01, 0.50, 0.15, step=0.01)
-pgd_iters = st.sidebar.slider("PGD iterations",              5, 100, 40, step=5)
+pgd_iters = st.sidebar.slider("PGD iterations",              5, 100, 40,   step=5)
 fp_noise  = st.sidebar.slider("Feature noise σ",             0.05, 1.0, 0.4, step=0.05)
 
 st.sidebar.markdown("---")
 defense_type = st.sidebar.selectbox(
     "Defense type",
     ["None", "Feature Squeezing", "Gaussian Smoothing", "Adversarial Training"],
-    help="Adversarial Training takes ~20 seconds"
+    help="Adversarial Training takes ~20 seconds",
 )
 
 n_samples = st.sidebar.slider("Samples to evaluate", 100, 1000, 500, step=100)
 
-# ─── Main header ──────────────────────────────────────────────────────────────
-st.title(" Adversarial ML Attack Toolkit")
+# ── Main header ───────────────────────────────────────────────────────────────
+st.title("🛡️ Adversarial ML Attack Toolkit")
 st.caption("Attack a security classifier in real time — then defend it.")
 
-# ─── Load data + model ────────────────────────────────────────────────────────
+# ── Load data + model ─────────────────────────────────────────────────────────
 x_train, x_test, y_train, y_test, features, scaler, model = get_data_and_model()
 
 x_sub = x_test[:n_samples].astype(np.float32)
 y_sub = y_test[:n_samples]
 
-art_clf = build_art_classifier(model, x_sub.shape[1])
+art_clf   = build_art_classifier(model, x_sub.shape[1])
 clean_acc = accuracy(model, x_sub, y_sub)
 
-# ─── Metric tiles ─────────────────────────────────────────────────────────────
+# ── Metric tiles ──────────────────────────────────────────────────────────────
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Baseline accuracy", f"{clean_acc:.3f}", help="Before any attack")
 
-# ─── Run attack ───────────────────────────────────────────────────────────────
+# ── Run attack ────────────────────────────────────────────────────────────────
 with st.spinner(f"⚔️ Running {attack_type} attack ..."):
     if attack_type == "FGSM":
         x_adv = fgsm_attack(art_clf, x_sub, eps=eps)
@@ -134,13 +135,13 @@ adv_acc = accuracy(model, x_adv, y_sub)
 drop    = clean_acc - adv_acc
 l2      = float(np.mean(np.linalg.norm(x_adv - x_sub, axis=1)))
 
-col2.metric("Under attack",       f"{adv_acc:.3f}", delta=f"{-drop:.3f}",    delta_color="inverse")
-col3.metric("Accuracy drop",      f"{drop:.3f}",    delta=f"{drop/clean_acc*100:.1f}%", delta_color="inverse")
-col4.metric("Mean L2 perturbation", f"{l2:.3f}",    help="Average feature change magnitude")
+col2.metric("Under attack",         f"{adv_acc:.3f}", delta=f"{-drop:.3f}",                       delta_color="inverse")
+col3.metric("Accuracy drop",        f"{drop:.3f}",    delta=f"{drop/max(clean_acc,1e-9)*100:.1f}%", delta_color="inverse")
+col4.metric("Mean L2 perturbation", f"{l2:.3f}",      help="Average feature change magnitude")
 
 st.markdown("---")
 
-# ─── Defense ──────────────────────────────────────────────────────────────────
+# ── Defense ───────────────────────────────────────────────────────────────────
 defended_acc   = None
 defended_model = model
 x_defended     = x_adv.copy()
@@ -159,7 +160,7 @@ elif defense_type == "Adversarial Training":
         defended_model = adversarial_training(model, x_train, y_train, x_adv_tr)
     defended_acc = accuracy(defended_model, x_adv, y_sub)
 
-# ─── Accuracy bar chart + Perturbation heatmap ───────────────────────────────
+# ── Accuracy bar chart + Perturbation heatmap ─────────────────────────────────
 col_left, col_right = st.columns(2)
 
 with col_left:
@@ -197,10 +198,9 @@ with col_right:
 
 st.markdown("---")
 
-# ─── Epsilon sweep ────────────────────────────────────────────────────────────
+# ── Epsilon sweep ─────────────────────────────────────────────────────────────
 st.subheader("📉 Attack strength vs accuracy (ε sweep)")
 
-# FIx: compute sweep inline but with a spinner so it doesn't look frozen
 eps_values = [0.01, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40]
 with st.spinner("Running ε sweep (FGSM only) ..."):
     sweep_adv_accs = []
@@ -234,18 +234,18 @@ fig3.update_layout(
 )
 st.plotly_chart(fig3, use_container_width=True)
 
-# ─── Sample predictions table ─────────────────────────────────────────────────
+# ── Sample predictions table ──────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("🔍 Sample predictions — clean vs adversarial")
 n_show = 10
 
 sample_df = pd.DataFrame({
-    "True label":    ["Attack" if v else "Normal" for v in y_sub[:n_show]],
-    "Clean pred":    ["Attack" if v else "Normal" for v in model.predict(x_sub[:n_show])],
-    "Adv pred":      ["Attack" if v else "Normal" for v in model.predict(x_adv[:n_show])],
-    "Changed?":      ["⚠️ yes" if a != b else "✅ No"
-                      for a, b in zip(model.predict(x_sub[:n_show]),
-                                      model.predict(x_adv[:n_show]))],
+    "True label":  ["Attack" if v else "Normal" for v in y_sub[:n_show]],
+    "Clean pred":  ["Attack" if v else "Normal" for v in model.predict(x_sub[:n_show])],
+    "Adv pred":    ["Attack" if v else "Normal" for v in model.predict(x_adv[:n_show])],
+    "Changed?":    ["⚠️ Yes" if a != b else "✅ No"
+                    for a, b in zip(model.predict(x_sub[:n_show]),
+                                    model.predict(x_adv[:n_show]))],
 })
 
 
