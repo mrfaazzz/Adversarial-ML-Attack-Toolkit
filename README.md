@@ -1,6 +1,6 @@
 # Adversarial ML Attack Toolkit for Security Models
 
-> **MSc Cybersecurity Project**  
+
 > An offensive ML toolkit that crafts adversarial inputs to fool intrusion detection classifiers — then hardens them against such attacks.
 
 ---
