@@ -1,14 +1,3 @@
-"""
-models/train_model.py
-----------------------
-Trains three classifiers on the IDS dataset:
-  - PyTorch MLP  (used for gradient-based attacks)
-  - Random Forest
-  - XGBoost
-
-All models are saved to models/saved/ after training.
-"""
-
 import os
 import joblib
 import numpy as np

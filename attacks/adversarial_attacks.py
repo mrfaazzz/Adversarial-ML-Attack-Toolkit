@@ -4,7 +4,6 @@ import torch.nn as nn
 from art.estimators.classification import PyTorchClassifier
 from art.attacks.evasion import FastGradientMethod, ProjectedGradientDescent
 
-
 # ── Build the ART wrapper around the PyTorch MLP ─────────────────────────────
 def build_art_classifier(torch_mlp, clip_values=None):
 
@@ -27,10 +26,7 @@ def build_art_classifier(torch_mlp, clip_values=None):
 
 # ── Attack 1: FGSM ────────────────────────────────────────────────────────────
 def fgsm_attack(art_clf, X_test: np.ndarray, eps: float = 0.15) -> np.ndarray:
-    """
-    Fast Gradient Sign Method — single-step, white-box attack.
-    eps controls how large the perturbation is.
-    """
+
     attack = FastGradientMethod(estimator=art_clf, eps=eps, targeted=False)
     return attack.generate(x=X_test.astype(np.float32))
 
@@ -38,10 +34,7 @@ def fgsm_attack(art_clf, X_test: np.ndarray, eps: float = 0.15) -> np.ndarray:
 # ── Attack 2: PGD ─────────────────────────────────────────────────────────────
 def pgd_attack(art_clf, X_test: np.ndarray, eps: float = 0.15,
                eps_step: float = None, max_iter: int = 20) -> np.ndarray:
-    """
-    Projected Gradient Descent — iterative white-box attack.
-    Much stronger than FGSM but slower. max_iter controls number of steps.
-    """
+
     if eps_step is None:
         eps_step = eps / 3
 
@@ -59,14 +52,10 @@ def pgd_attack(art_clf, X_test: np.ndarray, eps: float = 0.15,
 # ── Attack 3: Feature Perturbation ───────────────────────────────────────────
 def feature_perturbation_attack(X_test: np.ndarray, noise_scale: float = 0.4,
                                  top_n_features: int = 10, random_state: int = 42) -> np.ndarray:
-    """
-    Black-box attack — no gradients or model access needed.
-    Adds Gaussian noise to the top-N most variable features.
-    """
+
     rng   = np.random.default_rng(random_state)
     X_adv = X_test.copy().astype(np.float32)
 
-    # Target the features with highest variance (most informative to perturb)
     variances = X_test.var(axis=0)
     cols = np.argsort(variances)[::-1][:top_n_features]
     for col in cols:
@@ -77,10 +66,7 @@ def feature_perturbation_attack(X_test: np.ndarray, noise_scale: float = 0.4,
 # ── Evaluation helper ─────────────────────────────────────────────────────────
 def evaluate_attack(model, X_clean: np.ndarray, X_adv: np.ndarray,
                     y_true: np.ndarray, attack_name: str = "Attack") -> dict:
-    """
-    Compare model accuracy on clean vs adversarial inputs.
-    Returns a dict with accuracy, drop, and perturbation norms.
-    """
+
     from sklearn.metrics import accuracy_score
 
     pred_clean = model.predict(X_clean)

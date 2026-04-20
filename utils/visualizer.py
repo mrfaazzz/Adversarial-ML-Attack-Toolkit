@@ -1,16 +1,8 @@
-"""
-utils/visualizer.py
---------------------
-Generates and saves all result charts to the results/ folder.
-All charts are saved as high-quality PNG files.
-"""
-
 import os
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
 

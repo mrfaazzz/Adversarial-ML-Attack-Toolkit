@@ -400,7 +400,6 @@ with col_a:
     st.info(ATTACK_INFO[attack_type])
 with col_d:
     st.info(DEFENCE_INFO[defense_type])
-
 st.markdown("---")
 
 # ── Adversarial Training expander ─────────────────────────────────────────────

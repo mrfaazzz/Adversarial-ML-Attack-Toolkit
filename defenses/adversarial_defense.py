@@ -1,16 +1,3 @@
-"""
-defenses/adversarial_defense.py
----------------------------------
-Four defenses against adversarial attacks:
-
-  1. Adversarial Training  — retrain on a mix of clean + adversarial samples
-  2. Feature Squeezing     — reduce feature precision to kill small perturbations
-  3. Gaussian Smoothing    — average multiple noisy copies to cancel adversarial signal
-  4. Ensemble Defense      — three diverse models vote; hard to fool all at once
-
-Run compare_defenses() to see all results side by side.
-"""
-
 import os
 import numpy as np
 import joblib
@@ -25,10 +12,7 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 # ── Defense 1: Adversarial Training ──────────────────────────────────────────
 def adversarial_training(base_model, X_train_clean: np.ndarray, y_train: np.ndarray,
                           X_train_adv: np.ndarray, augment_ratio: float = 0.5):
-    """
-    Retrain the model on a mix of clean and adversarial examples.
-    augment_ratio controls what fraction of adversarial samples to add.
-    """
+
     from models.train_model import TorchMLP
 
     n_adv = int(len(X_train_adv) * augment_ratio)
@@ -65,10 +49,7 @@ def adversarial_training(base_model, X_train_clean: np.ndarray, y_train: np.ndar
 
 # ── Defense 2: Feature Squeezing ─────────────────────────────────────────────
 def feature_squeezing(X: np.ndarray, bit_depth: int = 4) -> np.ndarray:
-    """
-    Quantize features to a fixed bit-depth.
-    Tiny adversarial perturbations fall below the quantization threshold and get removed.
-    """
+
     x_min = X.min(axis=0)
     x_max = X.max(axis=0)
     span  = x_max - x_min
@@ -80,20 +61,14 @@ def feature_squeezing(X: np.ndarray, bit_depth: int = 4) -> np.ndarray:
 
 # ── Defense 3: Gaussian Smoothing ────────────────────────────────────────────
 def gaussian_smoothing(X: np.ndarray, sigma: float = 0.05) -> np.ndarray:
-    """
-    Average 5 noisy copies of each sample.
-    The structured adversarial signal cancels out; the real signal survives.
-    """
+
     copies = [X + np.random.normal(0, sigma, X.shape) for _ in range(5)]
     return np.mean(copies, axis=0).astype(np.float32)
 
 
 # ── Defense 4: Ensemble Defense ───────────────────────────────────────────────
 def build_ensemble_defense(X_train: np.ndarray, y_train: np.ndarray):
-    """
-    Train 3 diverse models (RF x2 + XGBoost) with soft-voting.
-    Hard to fool all three simultaneously.
-    """
+
     rf1  = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=1, n_jobs=-1)
     rf2  = RandomForestClassifier(n_estimators=150, max_depth=14, random_state=2, n_jobs=-1)
     xgb1 = xgb.XGBClassifier(
@@ -115,10 +90,7 @@ def compare_defenses(original_model, hardened_model, X_clean: np.ndarray,
                      X_adv: np.ndarray, y_true: np.ndarray,
                      squeezed_X_adv: np.ndarray = None,
                      smoothed_X_adv: np.ndarray = None) -> dict:
-    """
-    Print an accuracy comparison table for all defense configurations.
-    Returns a dict of {label: accuracy}.
-    """
+
     configs = [
         ("Original — clean input", original_model, X_clean),
         ("Original — adv input",   original_model, X_adv),

@@ -1,10 +1,3 @@
-"""
-data/data_loader.py
---------------------
-Loads NSL-KDD dataset from disk, or generates realistic synthetic data.
-Returns train/test splits ready for model training.
-"""
-
 import os
 import numpy as np
 import pandas as pd
@@ -322,10 +315,7 @@ def _generate_synthetic(n_samples: int = 10000, random_state: int = 42) -> pd.Da
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 def load_data(train_path: str = None, test_path: str = None, n_samples: int = 10000):
-    """
-    Load NSL-KDD data or generate synthetic data.
-    Returns: X_train, X_test, y_train, y_test, feature_names, scaler
-    """
+
     data_dir   = os.path.dirname(os.path.abspath(__file__))
     auto_train = os.path.join(data_dir, "KDDTrain+.txt")
 

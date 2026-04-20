@@ -1,27 +1,9 @@
-"""
-main.py — Adversarial ML Attack Toolkit
-=========================================
-Runs in three sequential stages. Each stage completes, then asks
-whether you want to continue to the next one.
-
-  Stage 1: IDS  — Load data and train models (runs automatically)
-  Stage 2: Attack — Run adversarial attacks on the trained IDS
-  Stage 3: Defence — Apply defences and compare results
-
-Usage:
-  python main.py
-
-To skip the prompt and run everything at once:
-  python main.py --all
-"""
-
 import os
 import sys
 import json
 import numpy as np
 from datetime import datetime
 
-# Make sure imports work from any working directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data.data_loader import load_data
@@ -52,7 +34,6 @@ RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 def _banner(title: str):
     print("\n" + "=" * 62)
     print(f"  {title}")
