@@ -121,13 +121,13 @@ def _save_report(all_metrics: dict):
 def stage_ids():
     _banner("STAGE 1 — IDS: Load Data & Train Models")
 
-    _section("Step 1 — Loading data")
+    _section("Loading data")
     X_train, X_test, y_train, y_test, features, scaler = load_data()
     N          = min(1000, len(X_test))
     X_test_sub = X_test[:N]
     y_test_sub = y_test[:N]
 
-    _section("Step 2 — Training models")
+    _section("Training models")
     models = train_and_save(X_train, X_test, y_train, y_test)
 
     _banner("STAGE 1 COMPLETE")
@@ -157,7 +157,7 @@ def stage_attacks(ctx: dict) -> dict:
     X_train    = ctx["X_train"]
     features   = ctx["features"]
 
-    _section("Step 3 — Building ART classifier wrapper")
+    _section("Building ART classifier wrapper")
     art_clf = build_art_classifier(
         best_model,
         clip_values=(float(X_train.min()), float(X_train.max()))
@@ -166,25 +166,25 @@ def stage_attacks(ctx: dict) -> dict:
 
     all_metrics = {}
 
-    _section("Step 4a — FGSM Attack  (eps=0.15, single step)")
+    _section("FGSM Attack  (eps=0.15, single step)")
     X_fgsm       = fgsm_attack(art_clf, X_test_sub, eps=0.15)
     fgsm_metrics = evaluate_attack(best_model, X_test_sub, X_fgsm, y_test_sub, "FGSM")
     all_metrics["FGSM Attack"] = fgsm_metrics
 
-    _section("Step 4b — PGD Attack  (eps=0.15, 20 iterations)")
+    _section("PGD Attack  (eps=0.15, 20 iterations)")
     X_pgd       = pgd_attack(art_clf, X_test_sub, eps=0.15, max_iter=20)
     pgd_metrics = evaluate_attack(best_model, X_test_sub, X_pgd, y_test_sub, "PGD")
     all_metrics["PGD Attack"] = pgd_metrics
 
-    _section("Step 4c — Feature Perturbation  (black-box, no gradients)")
+    _section("Feature Perturbation  (black-box, no gradients)")
     X_fp       = feature_perturbation_attack(X_test_sub, noise_scale=0.4)
     fp_metrics = evaluate_attack(best_model, X_test_sub, X_fp, y_test_sub, "Feature Perturbation")
     all_metrics["Feature Perturbation"] = fp_metrics
 
-    _section("Step 4d — Epsilon sweep (FGSM at multiple strengths)")
+    _section("Epsilon sweep (FGSM at multiple strengths)")
     eps_vals, clean_accs, adv_accs = _eps_sweep(art_clf, best_model, X_test_sub, y_test_sub)
 
-    _section("Step 5 — Generating attack plots")
+    _section("Generating attack plots")
     rf = ctx["models"]["rf"]
     plot_perturbation_heatmap(X_test_sub, X_fgsm, features, n_samples=50, attack_name="FGSM")
     plot_perturbation_heatmap(X_test_sub, X_pgd,  features, n_samples=50, attack_name="PGD")
